@@ -1,0 +1,10 @@
+getpass4
+fastapi
+uvicorn
+langchain==0.3.21
+langchain-groq==0.2.5
+python-dotenv==1.0.1
+faiss-cpu==1.10.0
+transformers==4.48.3
+langchain-community== 0.3.19
+sentence-transformers
