@@ -1,6 +1,5 @@
 import os 
 from dotenv import load_dotenv
-
 import os
 import getpass
 import json
@@ -28,7 +27,6 @@ if api_key_value: # Check if api_key_value is not None (meaning 'api_key_1' was 
 else:
     print("Error: 'api_key_1' environment variable not found. Please make sure it's set in your .env file or environment.")
 # ✅ Initialize FastAPI
-
 embed_model = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
 # ✅ Load FAISS Vector Store
@@ -99,10 +97,8 @@ def similarity_search(query, k):
 
     return retrieved_docs
 
-
-
 # ✅ Initialize Groq LLM Model
-chat_model_rag = ChatGroq(model_name="llama3-8b-8192", temperature=0, max_tokens=500)
+chat_model_rag = ChatGroq(model_name="llama3-8b-8192", temperature=0, max_tokens=2000)
 
 def rag_pipeline(user_input):
     results = similarity_search(user_input, k=3)
@@ -123,7 +119,6 @@ def rag_pipeline(user_input):
         system_message,
         HumanMessage(content=user_input)
     ])
-   #print("response is ------------------- ",response)
     final_response=""
     for chunk in response:
         if hasattr(chunk, 'content'):
@@ -135,9 +130,6 @@ def rag_pipeline(user_input):
             final_response += chunk["content"]
             time.sleep(0.05)
     return final_response
-
-   
-
 
 
 def chat_bot(user_input):
@@ -205,14 +197,14 @@ rag_tool = Tool(
 ))
 
 
-Agent_llm = ChatGroq(model_name="llama3-8b-8192", temperature=0.1, max_tokens=800)
+Agent_llm = ChatGroq(model_name="llama3-8b-8192", temperature=0.1, max_tokens=2000)
 memory = ConversationBufferMemory(memory_key="chat_history", output_key="output")
 
 # ✅ Create an agent with updated configuration
 agent = initialize_agent(
     llm=Agent_llm,
     tools=[chatbot_tool,rag_tool],
-    agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,#CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+    agent=AgentType.CHAT_ZERO_SHOT_REACT_DESCRIPTION,
     verbose=True,
     max_iterations=2,  # Limit the number of thinking iterations
     early_stopping_method="generate",
@@ -236,39 +228,17 @@ def chat_endpoint(user_input_data: UserInput):
 
     if user_input in ["exit", "quit", "thank you", "bye","tq"]:
         return JSONResponse({"response": "Goodbye! Just ping me 'hi' if you need any help and you know diabetic retinopathy follow the link: https://www.iscstech.com"})
-    # Validate and ensure correct output
-    # try:
-    #     response = agent.invoke(user_input)
-    #     return JSONResponse({"response": response['output']})
-    # # return JSONResponse({"raw_response": response}) # Return the 
-    # except Exception as e:
-    #     raise HTTPException(status_code=500, detail=f"Chatbot Error: {str(e)}")
+
     try:
-        # Invoke the agent
         response = agent.invoke(user_input)
-
-        # Check for observations in intermediate steps
-        if 'intermediate_steps' in response and response['intermediate_steps']:
-            last_step = response['intermediate_steps'][-1]
-
-            # Extract observation if available
-            if isinstance(last_step, tuple) and len(last_step) == 2 and isinstance(last_step[1], dict):
-                observation = last_step[1].get('observation')
-                if observation:
-                    return JSONResponse({"response": observation})
-
-        # If no observation, return final output
-        if 'output' in response:
-            return JSONResponse({"response": response['output']})
-
-        # Fallback if no output
-        return JSONResponse({"response": "No observation or output available. Please try again."})
+        return JSONResponse({"response": response['output']})
+    # return JSONResponse({"raw_response": response}) # Return the 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chatbot Error: {str(e)}")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chatbot Error: {str(e)}")
 
-      
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) # You can change host and port if needed
+    uvicorn.run(app, host="0.0.0.0", port=8000) # You can change host and port if needed    
