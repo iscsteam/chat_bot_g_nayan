@@ -13,8 +13,36 @@ from langchain.memory import ConversationBufferMemory
 from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import logging
+from datetime import datetime
+from typing import List, Dict, Any
+# --- Configure Logging (Manually) ---
+log_dir = "/app/logs"
+# No need for os.makedirs here; the Dockerfile handles it
 
-# Load environment variables
+# Create a specific logger for G-Nayan-Chatbot
+logger = logging.getLogger("G-Nayan-Chatbot")
+logger.setLevel(logging.DEBUG)  # Set the logger's level
+
+# Create a file handler
+log_file_path = f"{log_dir}/G_nayan_chatbot.log"  # Use a single log file
+file_handler = logging.FileHandler(log_file_path)
+file_handler.setLevel(logging.DEBUG)  # DEBUG level for the file
+
+# Create a stream handler
+stream_handler = logging.StreamHandler()
+stream_handler.setLevel(logging.INFO)  # INFO level for the console
+
+# Create a formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Set the formatter for both handlers
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+
+# Add the handlers to the logger
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 load_dotenv()
 api_key_value = os.getenv("api_key_1")
 
@@ -92,7 +120,6 @@ def rag_pipeline(user_input):
         "- Maintain factual accuracy.\n"
         "- If there is no similarity between query and generation, just return 'non'."
     )
-
     system_message = SystemMessage(content=system_prompt_template.format(context=context_text))
 
     # Use invoke instead of stream to get complete response at once
@@ -286,38 +313,45 @@ def process_agent_response(response_dict):
 
 # Initialize FastAPI
 app = FastAPI(title="G-Nayan Chatbot API", description="An AI chatbot for general conversations and diabetic retinopathy discussions.", version="0.1")
-
 class UserInput(BaseModel):
     user_input: str
-
 @app.post("/chat/")
 def chat_endpoint(user_input_data: UserInput):
     """Process user input and generate appropriate responses."""
     user_input = user_input_data.user_input.strip()
+    # Log the incoming request
+    logger.info(f"User Input: {user_input}")
 
     # Quick responses for simple greetings and goodbyes
     if user_input.lower() in ["hi", "hello", "hey", "hai"]:
-        return JSONResponse({"response": "Hello! I am your AI Assistant G-Nayan. How can I assist you today with diabetic retinopathy information or general conversation?"})
+        response = "Hello! I am your AI Assistant G-Nayan. How can I assist you today with diabetic retinopathy information or general conversation?"
+        logger.info(f"G-Nayan Response: {response}")
+        return JSONResponse({"G-Nayan": response})
+        
 
     if user_input.lower() in ["exit", "quit", "thank you", "bye", "tq"]:
-        return JSONResponse({"response": "Goodbye! Just ping me 'hi' if you need any help with diabetic retinopathy. You can learn more at https://www.iscstech.com"})
+        response = "Goodbye! Just ping me 'hi' if you need any help with diabetic retinopathy. You can learn more at https://www.iscstech.com"
+        logger.info(f"G-Nayan Response: {response}")
+        return JSONResponse({"G-Nayan": response})
 
     try:
-        # Check if query is an information query but outside of scope
         if is_information_query(user_input) and not is_within_scope(user_input):
-            return JSONResponse({"response": get_out_of_scope_response()})
-
+            response = get_out_of_scope_response()
+            logger.info(f"G-Nayan Response (Out of Scope): {response}")
+            return JSONResponse({"G-Nayan": response})
         # Directly use RAG for in-scope information queries
+      
         if is_information_query(user_input) and is_within_scope(user_input):
             rag_response = rag_pipeline(user_input)
-            return JSONResponse({"response": rag_response})
-
-        # Use agent for general conversation and non-information queries
+            response = f"Knowledge from Rag Response: {rag_response}"
+            logger.info(f"G-Nayan Response (RAG): {response[:100]}...")  # Log first 100 chars to avoid huge logs
+            return JSONResponse({"G-Nayan": response})
+     
         response = agent.invoke(user_input)
-
         # Process the agent's response to ensure RAG outputs are returned correctly
         processed_response = process_agent_response(response)
-        return JSONResponse({"response": processed_response})
+        logger.info(f"G-Nayan Response (Agent): {processed_response[:100]}...")  # Log
+        return JSONResponse({"G-Nayan": processed_response})
 
     except Exception as e:
         print(f"Error in processing: {str(e)}")
@@ -325,7 +359,7 @@ def chat_endpoint(user_input_data: UserInput):
             status_code=500,
             content={"response": "I apologize for the technical difficulties. Please try again with a different question."}
         )
-
+    
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

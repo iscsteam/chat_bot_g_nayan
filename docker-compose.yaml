@@ -1,0 +1,11 @@
+version: '3.8'  # Choose a compatible version
+
+services:
+  chatbot:  #  Name your service
+    build:
+      context: .      # Build from the current directory
+      dockerfile: Dockerfile  # Use the file named 'Dockerfile'
+    ports:
+      - "8000:8000"  # Expose port 8000
+    volumes:
+      - "C:\\Users\\DELL\\Desktop\\chatbot_for diabetic_retinopathy:/app/logs"  # *** VOLUME MOUNT ***
