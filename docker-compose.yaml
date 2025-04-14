@@ -8,4 +8,4 @@ services:
     ports:
       - "8000:8000"  # Expose port 8000
     volumes:
-      - "C:\\Users\\DELL\\Desktop\\chatbot_for diabetic_retinopathy:/app/logs"  # *** VOLUME MOUNT ***
+      - "C:\\Users\\DELL\\Desktop\\chatbot_for diabetic_retinopathy:/app/logs" 

@@ -11,11 +11,23 @@ from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from fastapi.responses import JSONResponse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
+from prompts.prompts import system_prompt_bot, agent_system_message
+from fastapi.middleware.cors import CORSMiddleware
+import random
+
+
+# --- Configure CORS Middleware ---
+origins = [
+    "http://localhost:3000",  # React frontend
+    "https://your-frontend-domain.com",
+    "https://ai-ra.vercel.app/"  # Replace with your actual frontend domain
+]
+
 # --- Configure Logging (Manually) ---
 log_dir = "/app/logs"
 # No need for os.makedirs here; the Dockerfile handles it
@@ -44,7 +56,11 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 load_dotenv()
-api_key_value = os.getenv("api_key_1")
+api_keys = ["api_key_1", "api_key_2", "api_key_3"]
+
+# Randomly pick one API key
+api_key_value = random.choice(api_keys)
+# api_key_value = os.getenv("api_key_1")
 
 if api_key_value:
     os.environ["GROQ_API_KEY"] = api_key_value
@@ -140,42 +156,8 @@ def chat_bot(user_input):
     """Handle general conversation with the user."""
     user_input = user_input.strip()
     chat_model = ChatGroq(model_name="llama3-8b-8192", temperature=0.1, max_tokens=1000)
-
-    system_prompt = """
-    1. You are G-Nayan, an AI chatbot specializing in general conversations, RAG-integrated chatbot functionalities, and discussions related to diabetic retinopathy.
-       - You engage in general conversation greetings.
-       - You cannot answer questions unrelated to diabetic retinopathy.
-       - You explain your role as an AI chatbot with a RAG pipeline integration.
-       - You provide accurate and concise responses related to diabetic retinopathy.
-
-    **You must strictly follow the below guidelines.**
-
-    2. **Behavioral Constraints:** Important Rules to follow
-       - Never explicitly state that you are an AI unless asked.
-       - Do not go out of your role.
-       - Do not repeatedly mention: *"As a specialist in diabetic retinopathy."*
-       - If asked about unrelated or inappropriate topics, respond with:
-         *"I am limited to discussions on diabetic retinopathy and general chatbot interactions."*
-       - Always prioritize clear, factual, and concise responses.
-       - Provide detailed, comprehensive answers with sufficient information.
-
-    3. **Medical Queries:**
-       - Provide reliable and relevant information about diabetic retinopathy.
-       - Avoid offering medical diagnoses or personalized treatment recommendations.
-       - If a user asks unrelated or inappropriate medical questions, respond with:
-         *"I can only assist with general discussions and diabetic retinopathy-related topics."*
-
-    4. **Conversation Flow:**
-       - Maintain professionalism while keeping the interaction engaging.
-       - Avoid redundant or unnecessary explanations.
-       - Ensure responses are informative yet easy to understand.
-       - Provide thorough, detailed responses rather than short answers.
-
-    Follow these rules strictly to ensure consistency and user satisfaction.
-    """
-
     response = chat_model.invoke([
-        SystemMessage(content=system_prompt),
+        SystemMessage(content=system_prompt_bot),
         HumanMessage(content=user_input)
     ])
 
@@ -256,25 +238,25 @@ rag_tool = Tool(
 Agent_llm = ChatGroq(model_name="llama3-8b-8192", temperature=0.1, max_tokens=4000)
 memory = ConversationBufferMemory(memory_key="chat_history", output_key="output", return_messages=True)
 
-# System message for the agent that prioritizes RAG
-agent_system_message = """You are G-Nayan, a specialized chatbot focused on diabetic retinopathy.
+# # System message for the agent that prioritizes RAG
+# agent_system_message = """You are G-Nayan, a specialized chatbot focused on diabetic retinopathy.
 
-For ANY information or medical queries ABOUT DIABETIC RETINOPATHY, you MUST use the RAG Retrieval tool.
-The RAG tool should be your default choice for diabetic retinopathy questions.
+# For ANY information or medical queries ABOUT DIABETIC RETINOPATHY, you MUST use the RAG Retrieval tool.
+# The RAG tool should be your default choice for diabetic retinopathy questions.
 
-Only use the ChatBot tool for greetings and general conversation that doesn't require any specific information.
+# Only use the ChatBot tool for greetings and general conversation that doesn't require any specific information.
 
-IMPORTANT: When using the RAG Retrieval tool, NEVER modify or summarize its output.
-Return the COMPLETE RAG output WITHOUT any "Final Answer" or additional commentary.
-The RAG output is already optimized and should be presented to the user exactly as received.
+# IMPORTANT: When using the RAG Retrieval tool, NEVER modify or summarize its output.
+# Return the COMPLETE RAG output WITHOUT any "Final Answer" or additional commentary.
+# The RAG output is already optimized and should be presented to the user exactly as received.
 
-For medical topics about diabetes eye care, information about G-Nayan, diabetes eye health, or any diabetic retinopathy related questions,
-ALWAYS use the RAG Retrieval tool and NEVER attempt to answer these questions yourself.
+# For medical topics about diabetes eye care, information about G-Nayan, diabetes eye health, or any diabetic retinopathy related questions,
+# ALWAYS use the RAG Retrieval tool and NEVER attempt to answer these questions yourself.
 
-You CANNOT answer questions about non-diabetic retinopathy medical conditions. For any question outside your scope,
-respond with: "I'm specialized in diabetic retinopathy topics. I'd be happy to help with questions about eye health
-for diabetic patients, G-Nayan technology, or general conversation. What would you like to know about diabetic retinopathy?"
-"""
+# You CANNOT answer questions about non-diabetic retinopathy medical conditions. For any question outside your scope,
+# respond with: "I'm specialized in diabetic retinopathy topics. I'd be happy to help with questions about eye health
+# for diabetic patients, G-Nayan technology, or general conversation. What would you like to know about diabetic retinopathy?"
+# """
 
 # Create an agent with improved configuration
 agent = initialize_agent(
@@ -315,50 +297,89 @@ def process_agent_response(response_dict):
 app = FastAPI(title="G-Nayan Chatbot API", description="An AI chatbot for general conversations and diabetic retinopathy discussions.", version="0.1")
 class UserInput(BaseModel):
     user_input: str
-@app.post("/chat/")
-def chat_endpoint(user_input_data: UserInput):
-    """Process user input and generate appropriate responses."""
-    user_input = user_input_data.user_input.strip()
-    # Log the incoming request
-    logger.info(f"User Input: {user_input}")
-
-    # Quick responses for simple greetings and goodbyes
-    if user_input.lower() in ["hi", "hello", "hey", "hai"]:
-        response = "Hello! I am your AI Assistant G-Nayan. How can I assist you today with diabetic retinopathy information or general conversation?"
-        logger.info(f"G-Nayan Response: {response}")
-        return JSONResponse({"G-Nayan": response})
-        
-
-    if user_input.lower() in ["exit", "quit", "thank you", "bye", "tq"]:
-        response = "Goodbye! Just ping me 'hi' if you need any help with diabetic retinopathy. You can learn more at https://www.iscstech.com"
-        logger.info(f"G-Nayan Response: {response}")
-        return JSONResponse({"G-Nayan": response})
+@app.websocket("/ws/Gnayana_chat")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_text("👋 Hello! I am G-Nayan. Ask me about diabetic retinopathy or start a general chat!")
 
     try:
-        if is_information_query(user_input) and not is_within_scope(user_input):
-            response = get_out_of_scope_response()
-            logger.info(f"G-Nayan Response (Out of Scope): {response}")
-            return JSONResponse({"G-Nayan": response})
-        # Directly use RAG for in-scope information queries
-      
-        if is_information_query(user_input) and is_within_scope(user_input):
-            rag_response = rag_pipeline(user_input)
-            response = f"Knowledge from Rag Response: {rag_response}"
-            logger.info(f"G-Nayan Response (RAG): {response[:100]}...")  # Log first 100 chars to avoid huge logs
-            return JSONResponse({"G-Nayan": response})
-     
-        response = agent.invoke(user_input)
-        # Process the agent's response to ensure RAG outputs are returned correctly
-        processed_response = process_agent_response(response)
-        logger.info(f"G-Nayan Response (Agent): {processed_response[:100]}...")  # Log
-        return JSONResponse({"G-Nayan": processed_response})
+        while True:
+            data = await websocket.receive_text()
+            user_input = data.strip()
+            logger.info(f"User Input: {user_input}")
 
-    except Exception as e:
-        print(f"Error in processing: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"response": "I apologize for the technical difficulties. Please try again with a different question."}
-        )
+            # Quick responses
+            if user_input.lower() in ["hi", "hello", "hey", "hai"]:
+                response = "Hello! I am your AI Assistant G-Nayan. How can I assist you today with diabetic retinopathy information or general conversation?"
+                await websocket.send_text(response)
+                continue
+
+            if user_input.lower() in ["exit", "quit", "thank you", "bye", "tq"]:
+                response = "Goodbye! Just ping me 'hi' if you need any help with diabetic retinopathy. Visit https://www.iscstech.com for more."
+                await websocket.send_text(response)
+                await websocket.close()
+                break
+
+            try:
+                if is_information_query(user_input) and not is_within_scope(user_input):
+                    response = get_out_of_scope_response()
+                    await websocket.send_text(response)
+                elif is_information_query(user_input) and is_within_scope(user_input):
+                    rag_response = rag_pipeline(user_input)
+                    response = f"Knowledge from Rag Response: {rag_response}"
+                    await websocket.send_text(response)
+                else:
+                    agent_response = agent.invoke(user_input)
+                    processed_response = process_agent_response(agent_response)
+                    await websocket.send_text(processed_response)
+            except Exception as e:
+                logger.error(f"Error: {str(e)}")
+                await websocket.send_text("⚠️ Sorry, something went wrong. Please try again.")
+    except WebSocketDisconnect:
+        logger.info("WebSocket connection closed.")
+# @app.post("/chat/")
+# def chat_endpoint(user_input_data: UserInput):
+#     user_input = user_input_data.user_input.strip()
+#     # Log the incoming request
+#     logger.info(f"User Input: {user_input}")
+
+#     # Quick responses for simple greetings and goodbyes
+#     if user_input.lower() in ["hi", "hello", "hey", "hai"]:
+#         response = "Hello! I am your AI Assistant G-Nayan. How can I assist you today with diabetic retinopathy information or general conversation?"
+#         logger.info(f"G-Nayan Response: {response}")
+#         return JSONResponse({"G-Nayan": response})
+        
+
+#     if user_input.lower() in ["exit", "quit", "thank you", "bye", "tq"]:
+#         response = "Goodbye! Just ping me 'hi' if you need any help with diabetic retinopathy. You can learn more at https://www.iscstech.com"
+#         logger.info(f"G-Nayan Response: {response}")
+#         return JSONResponse({"G-Nayan": response})
+
+#     try:
+#         if is_information_query(user_input) and not is_within_scope(user_input):
+#             response = get_out_of_scope_response()
+#             logger.info(f"G-Nayan Response (Out of Scope): {response}")
+#             return JSONResponse({"G-Nayan": response})
+#         # Directly use RAG for in-scope information queries
+      
+#         if is_information_query(user_input) and is_within_scope(user_input):
+#             rag_response = rag_pipeline(user_input)
+#             response = f"Knowledge from Rag Response: {rag_response}"
+#             logger.info(f"G-Nayan Response (RAG): {response[:100]}...")  # Log first 100 chars to avoid huge logs
+#             return JSONResponse({"G-Nayan": response})
+     
+#         response = agent.invoke(user_input)
+#         # Process the agent's response to ensure RAG outputs are returned correctly
+#         processed_response = process_agent_response(response)
+#         logger.info(f"G-Nayan Response (Agent): {processed_response[:100]}...")  # Log
+#         return JSONResponse({"G-Nayan": processed_response})
+
+#     except Exception as e:
+#         print(f"Error in processing: {str(e)}")
+#         return JSONResponse(
+#             status_code=500,
+#             content={"response": "I apologize for the technical difficulties. Please try again with a different question."}
+#         )
     
 if __name__ == "__main__":
     import uvicorn
