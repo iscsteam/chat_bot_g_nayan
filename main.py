@@ -42,6 +42,7 @@ file_handler = logging.FileHandler(log_file_path)
 file_handler.setLevel(logging.DEBUG)  # DEBUG level for the file
 
 # Create a stream handler
+
 stream_handler = logging.StreamHandler()
 stream_handler.setLevel(logging.INFO)  # INFO level for the console
 
@@ -56,11 +57,13 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 load_dotenv()
-api_keys = ["api_key_1", "api_key_2", "api_key_3"]
+# Randomly pick one API key
+api_keys = ["api_key_1", "api_key_2","api_key_3"]  # List of environment variable names for API keys
 
 # Randomly pick one API key
-api_key_value = random.choice(api_keys)
-# api_key_value = os.getenv("api_key_1")
+api_key_value_choice= random.choice(api_keys)
+
+api_key_value = os.getenv(api_key_value_choice)
 
 if api_key_value:
     os.environ["GROQ_API_KEY"] = api_key_value
